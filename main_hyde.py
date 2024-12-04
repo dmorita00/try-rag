@@ -24,9 +24,9 @@ class PDFRAGSystem:
 
     def load_and_split_documents(self, pdf_dir):
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=300,
-            chunk_overlap=20,
-            separators=['。', '．', '！', '？', '\n', '\r\n']
+            chunk_size=500,
+            chunk_overlap=100,
+            separators=['。', '\n', '\r\n']
             # length_function=len,
             # is_separator_regex=False
         )
