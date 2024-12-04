@@ -1,4 +1,6 @@
 pdfs/*
+!pdfs/.gitkeep
 rag
 .env
 vector_store/*
+!vector_store/.gitkeep
