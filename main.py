@@ -3,10 +3,11 @@ import os
 from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain_openai import ChatOpenAI
 from langchain_openai import OpenAIEmbeddings
+from langchain.prompts import PromptTemplate
 
 load_dotenv()
 
@@ -16,11 +17,16 @@ class PDFRAGSystem:
         self.documents = []
         self.vector_store = None
         self.qa_chain = None
+        self.save_path = './vector_store'
+        self.embeddings = OpenAIEmbeddings()
 
     def load_and_split_documents(self, pdf_dir):
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=400,
-            chunk_overlap=3
+            chunk_size=200,
+            chunk_overlap=20,
+            separators=['。', '．', '！', '？', '\n', '\r\n']
+            # length_function=len,
+            # is_separator_regex=False
         )
 
         for pdf_file in os.listdir(pdf_dir):
@@ -30,16 +36,34 @@ class PDFRAGSystem:
                 self.documents.extend(documents)
 
     def create_vector_store(self):
-        embeddings = OpenAIEmbeddings()
-        self.vector_store = Chroma.from_documents(
+        self.vector_store = FAISS.from_documents(
             documents=self.documents,
-            embedding=embeddings
+            embedding=self.embeddings
         )
+        self.vector_store.save_local(self.save_path)
 
     def create_qa_chain(self):
-        retriever = self.vector_store.as_retriever(
-            search_kwargs={'k': 3}  # 上位3つの関連文書を取得
+        db = FAISS.load_local(
+            folder_path=self.save_path,
+            embeddings=self.embeddings,
+            allow_dangerous_deserialization=True
         )
+        retriever = db.as_retriever(
+            # search_kwargs={'k': 3}  # 上位3つの関連文書を取得
+        )
+
+        template = """
+参考情報を元に、ユーザーからの質問にできるだけ正確に答えてください。
+{context}
+ユーザーの質問は以下の通りです。
+質問: {question}"""
+
+        prompt = PromptTemplate(
+            template=template,
+            input_variables=['context', 'question'],
+            template_format='f-string'
+        )
+        chain_type_kwargs = {'prompt': prompt}
 
         llm = ChatOpenAI(
             model='gpt-4o-mini',
@@ -49,7 +73,10 @@ class PDFRAGSystem:
         self.qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type='stuff',
-            retriever=retriever
+            retriever=retriever,
+            return_source_documents=True,
+            chain_type_kwargs=chain_type_kwargs,
+            verbose=True,
         )
 
     def query(self, question):
@@ -58,9 +85,11 @@ class PDFRAGSystem:
 
         return self.qa_chain.invoke(question)
 
-    def process(self, question):
+    def prepare(self):
         self.load_and_split_documents('pdfs')
         self.create_vector_store()
+
+    def process(self, question):
         self.create_qa_chain()
         return self.query(question)
 
@@ -86,11 +115,10 @@ def main():
         question = sys.argv[1]
         answer = rag_system.process(question)
         print(f"質問: {question}")
-        print(f"回答: {answer}")
+        print(f"回答: {answer['result']}")
 
     else:
-        print("Please provide a question as a command-line argument.")
-        sys.exit(1)
+        rag_system.prepare()
 
 if __name__ == "__main__":
     main()
