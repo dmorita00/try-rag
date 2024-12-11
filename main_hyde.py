@@ -47,6 +47,7 @@ class PDFRAGSystem:
     def create_qa_chain(self):
         system_template = """
 参考情報を元に、ユーザーからの質問にできるだけ正確に答えてください。
+参考情報に含まれない情報を答えることはできません。
 {context}"""
 
         prompt = ChatPromptTemplate.from_messages([
